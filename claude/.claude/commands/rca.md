@@ -18,7 +18,7 @@ Operate strictly in **Inference mode** as defined in `CLAUDE.md` (Working modes 
 ## Procedure
 
 1. **Parse the error.** Extract concrete signals: error type/code, message text, file paths, line numbers, function/method names, subjects (NATS), SQL objects, HTTP routes, env vars, timestamps. Treat only what is literally in the input as verified.
-2. **Locate evidence in the repo.** Use Grep/Glob/Read to find each concrete signal. Read the exact lines surrounding any matched symbol or call site. Note when a signal cannot be located — that itself is evidence.
+2. **Locate evidence in the repo.** Use Grep/Glob/Read to find each concrete signal. Read the exact lines surrounding any matched symbol or call site. Note when a signal cannot be located — that itself is evidence. If the concrete signals suggest artefact drift (missing HTTP route, stale JSON field name, unknown error code string, unresolved env var, DDL vs migration mismatch), note to the user that `/syncheck` may localise the cause faster than bottom-up grepping. Continue the RCA regardless — do not invoke syncheck from here.
 3. **If the error touches `schema/**` or any `*.sql`**, layer **SQL & schema safety** rules on top: never name a table/column/function as verified unless visible in the repo.
 4. **Generate ranked hypotheses.** Aim for 3–5 plausible root causes, ordered most-to-least likely. For each: one-line claim, the supporting evidence, the contradicting evidence (if any), and what would confirm or refute it.
 5. **Do not collapse uncertainty.** If two hypotheses are equally supported, say so. Never present a guessed identifier, signature, or config value as confirmed.
