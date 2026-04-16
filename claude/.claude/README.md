@@ -38,7 +38,7 @@ Idea ─► Design ─► Spec ─► Build ─► Verify ─► Release ─► 
         │         │       │        │         │           │      │
         │         │       │        │         │           │      └─ /rca, /breakdown, /apply
         │         │       │        │         │           └─ releasegen
-        │         │       │        │         └─ apidiff, secscan
+        │         │       │        │         └─ apidiff, secscan, dbaudit
         │         │       │        └─ testgen, syncheck
         │         │       └─ codegen, schemagen
         │         └─ specgen
@@ -151,7 +151,23 @@ Or scope to a single concern:
 
 **What happens:** Claude scans for hardcoded secrets, SQL injection, command injection, weak crypto, auth gaps, insecure CORS/transport, vulnerable dependencies, and sensitive logging. Findings are ranked critical/high/medium/low/info with a stated threat model. **It does not fix anything** — it produces a report you triage.
 
-### 4d. API change impact
+### 4d. SQL codebase critique
+
+**Use:** `dbaudit`
+
+**Type:**
+> dbaudit
+
+Or scope it:
+> dbaudit scope: schema/v1/command/tables mode: recommendations
+
+**What happens:** Claude statically inspects all SQL under `schema/**` (DDL, views, PL/pgSQL functions, constraints, indexes) and produces a ranked findings report classified by label (MODELLING, INTEGRITY, TYPES, PERFORMANCE, CORRECTNESS, SECURITY, COHERENCE) and severity (critical → info). Every finding cites `file:line`, states the worst-case outcome and preconditions, and carries a confidence tag. No SQL is executed; no files are modified.
+
+**Three modes:** `report` (findings only), `recommendations` (findings + prose remediation per finding), `breakdown-ready` (findings pre-formatted for `/breakdown` → `schemagen` handoff).
+
+**What it is not:** it does not write migrations (that's `schemagen`), detect design/spec/code drift (that's `syncheck`), audit Go call-site code, or perform a broad security scan (that's `secscan`).
+
+### 4e. API change impact
 
 **Use:** `apidiff`
 
@@ -219,6 +235,7 @@ If a `/syncheck` finding triggered the work, mention it — `/rca` knows to fact
 | Check that design, spec, and code agree | `/syncheck` |
 | Add tests to legacy code | `testgen` |
 | Audit for secrets, injection, weak crypto, auth gaps | `secscan` |
+| Critique SQL schema for modelling, integrity, performance, correctness | `dbaudit` |
 | Compare API contracts between two versions | `apidiff` |
 | Draft release notes and a version bump | `releasegen` |
 | Investigate a bug or unexpected behaviour | `/rca` |
