@@ -270,6 +270,10 @@ Use `/rfc` when the work starts as intent rather than as a broken symptom. The o
 
 **What happens:** Claude switches into Inference mode, separates verified observations from hypotheses, lists ranked likely causes, and ends with **what to verify next** (specific files, log greps, queries to run). It does not patch anything.
 
+**Short path for self-locating errors.** Before the full ranked-hypothesis pass, `/rca` runs a triage gate. If the error points to a single `file:line`, has an unambiguous message (compile error, nil deref, undefined symbol, typed import failure, etc.), and involves no schema / migration / cross-service / NATS / SQL signals, `/rca` emits a short **Cause → Fix pointer → Why the short path** output and stops. This keeps simple bugs cheap without losing the rigour for ambiguous ones. If the short path picks the wrong target, re-invoke `/rca` and say "full analysis" — the gate is deliberately conservative, so ambiguous errors always take the long path.
+
+Note: the triage gate only fires when you invoke `/rca` explicitly. A natural-language request like "find the issue with X" won't load the command file and will be handled ad-hoc (often faster, but without the mode discipline).
+
 If a `/syncheck` finding triggered the work, mention it — `/rca` knows to factor drift in.
 
 ### 7c. Plan — `/breakdown`
