@@ -6,6 +6,36 @@ The guide below is organised by software development lifecycle (SDLC) activity. 
 
 ---
 
+## Contents
+
+- [How the configuration is organised](#how-the-configuration-is-organised)
+  - [What rules give you for free](#what-rules-give-you-for-free)
+- [SDLC activity map](#sdlc-activity-map)
+- [1. Design — "I want to start a new feature"](#1-design--i-want-to-start-a-new-feature)
+- [2. Spec — "I have a design, turn it into a buildable contract"](#2-spec--i-have-a-design-turn-it-into-a-buildable-contract)
+- [3. Build — "Implement a component from the spec"](#3-build--implement-a-component-from-the-spec)
+  - [3a. Application code](#3a-application-code)
+  - [3b. Database schema change](#3b-database-schema-change)
+- [4. Verify — "Make sure what we built is still consistent"](#4-verify--make-sure-what-we-built-is-still-consistent)
+  - [4a. Drift between design, spec, and code](#4a-drift-between-design-spec-and-code)
+  - [4b. Add tests to existing code that lacks them](#4b-add-tests-to-existing-code-that-lacks-them)
+  - [4c. Security posture review](#4c-security-posture-review)
+  - [4d. SQL codebase critique](#4d-sql-codebase-critique)
+  - [4e. API change impact](#4e-api-change-impact)
+- [5. Release — "Cut a version"](#5-release--cut-a-version)
+- [6. Run — "Document how to operate this thing"](#6-run--document-how-to-operate-this-thing)
+- [7. Maintain — "Something is wrong / something needs to change"](#7-maintain--something-is-wrong--something-needs-to-change)
+  - [7a. Capture a change request — `/rfc`](#7a-capture-a-change-request--rfc)
+  - [7b. Diagnose — `/rca`](#7b-diagnose--rca)
+  - [7c. Plan — `/breakdown`](#7c-plan--breakdown)
+  - [7d. Implement — `/apply`](#7d-implement--apply)
+- [Quick reference: which command/skill for which sentence](#quick-reference-which-commandskill-for-which-sentence)
+- [Sub-agents](#sub-agents)
+- [Three habits that make this configuration sing](#three-habits-that-make-this-configuration-sing)
+- [What's NOT in this configuration](#whats-not-in-this-configuration)
+
+---
+
 ## How the configuration is organised
 
 Three kinds of asset live under `.claude/`:
@@ -35,8 +65,9 @@ You don't invoke these. They're the baseline.
 
 ```
 Idea ─► Design ─► Spec ─► Build ─► Verify ─► Release ─► Run ─► Maintain
-        │         │       │        │         │           │      │
-        │         │       │        │         │           │      └─ /rca, /breakdown, /apply
+        │         │       │        │         │           │      │    │
+        │         │       │        │         │           │      │    └─ /rfc, /rca, /breakdown, /apply
+        │         │       │        │         │           │      └─ runbookgen
         │         │       │        │         │           └─ releasegen
         │         │       │        │         └─ apidiff, secscan, dbaudit
         │         │       │        └─ testgen, syncheck
@@ -195,11 +226,44 @@ Or scope it:
 
 ---
 
-## 6. Maintain — "Something is wrong / something needs to change"
+## 6. Run — "Document how to operate this thing"
 
-The maintenance loop is three commands working in sequence:
+**Use:** `runbookgen`
 
-### 6a. Diagnose — `/rca`
+**Type:**
+> runbookgen target: cmd/ingestor
+
+Or scope it:
+> runbookgen target: appliance-api scope: minimal
+
+**What happens:** Claude reads the target's source and configuration, extracts operational facts with `path:line` citations (startup, shutdown signals, ports, env vars, dependencies, health endpoints, logged error signals), and drafts a Markdown runbook: service summary, at-a-glance table, start/stop commands, configuration, dependencies, health checks, alert responses, known failure modes, and rollback. Anything not found in the repo is placed in a **Gaps** section marked "Needs operator confirmation" rather than guessed.
+
+**Three scopes:** `minimal` (overview + start/stop + rollback), `standard` (default — adds dependencies + alert responses + known failure modes), `full` (adds escalation placeholders).
+
+**Writes to `docs/runbooks/<target>.md`** when `output: file` is passed; otherwise returns inline.
+
+**What it is not:** it does not deploy, page, restart, or execute diagnostic commands; it does not invent escalation contacts or SLAs; it does not fix bugs it finds (those go through `/rca` → `/breakdown` → `/apply`).
+
+---
+
+## 7. Maintain — "Something is wrong / something needs to change"
+
+The maintenance loop is a short chain of commands. Start with whichever upstream fits the trigger:
+
+- **Bug / incident / unexpected behaviour** → start at `/rca`.
+- **Feature request / enhancement / refactor / customer ask** → start at `/rfc`.
+- **Already have a structured diagnosis** (syncheck report, apidiff finding, Playbook step) → go straight to `/breakdown`.
+
+### 7a. Capture a change request — `/rfc`
+
+**Type:**
+> /rfc operators need to rotate NATS keys without restarting appliances; today the key is loaded once at startup.
+
+**What happens:** Claude switches into Observation mode, restates your request, anchors it in the repository (current behaviour with `path:line` citations), and drafts a structured RFC: motivation, current vs desired behaviour, scope, objective acceptance criteria, constraints, and open questions. For larger requests it writes `issue-<id>-rfc.md` at the repo root. It does **not** prescribe phases or files — that is `/breakdown`'s job.
+
+Use `/rfc` when the work starts as intent rather than as a broken symptom. The output is designed to feed directly into `/breakdown`.
+
+### 7b. Diagnose — `/rca`
 
 **Type:**
 > /rca our login endpoint started returning 500 on Monday but the error log just says "context deadline exceeded".
@@ -208,14 +272,14 @@ The maintenance loop is three commands working in sequence:
 
 If a `/syncheck` finding triggered the work, mention it — `/rca` knows to factor drift in.
 
-### 6b. Plan — `/breakdown`
+### 7c. Plan — `/breakdown`
 
 **Type:**
-> /breakdown <paste the RCA conclusion or describe the change you want>
+> /breakdown <paste the RFC, RCA conclusion, or describe the change you want>
 
-**What happens:** Claude turns the input into a phased implementation plan with explicit verification steps. The input doesn't have to come from `/rca` — it accepts a syncheck report, an apidiff finding, a Playbook step, a design delta, or just an issue description.
+**What happens:** Claude turns the input into a phased implementation plan with explicit verification steps. The input can be an `/rfc` output, an `/rca` output, a syncheck report, an apidiff finding, a Playbook step, a design delta, or just an issue description.
 
-### 6c. Implement — `/apply`
+### 7d. Implement — `/apply`
 
 **Type:**
 > /apply <plan-file-or-summary> <phase-number>
@@ -238,9 +302,23 @@ If a `/syncheck` finding triggered the work, mention it — `/rca` knows to fact
 | Critique SQL schema for modelling, integrity, performance, correctness | `dbaudit` |
 | Compare API contracts between two versions | `apidiff` |
 | Draft release notes and a version bump | `releasegen` |
+| Draft an operational runbook for a service | `runbookgen` |
+| Capture a feature/enhancement/refactor as a structured change request | `/rfc` |
 | Investigate a bug or unexpected behaviour | `/rca` |
-| Convert a finding/issue into a plan | `/breakdown` |
+| Convert an RFC, RCA, or finding into a plan | `/breakdown` |
 | Apply one phase of a plan as code edits | `/apply` |
+
+---
+
+## Sub-agents
+
+The commands handle parallelism for you. `/rca`, `/rfc`, and `/breakdown` batch independent lookups in a single message and escalate to `Explore` sub-agents when a verification set is large enough to justify it. You don't configure this — it's baked into the procedures.
+
+What to keep in mind as a user:
+
+- **Don't wrap the chain.** `/rca` → `/breakdown` → `/apply` is deliberately interactive so you review each gate. Spawning one agent to run the whole chain collapses those gates.
+- **`/apply` stays in the main thread.** Patch mode's value is that you see precondition re-verification, the exact edits, and exit-criteria output in your scrollback — an agent would hide them.
+- **Destructive or side-effectful actions** (git push, release tagging, migrations against shared databases) always run in the main thread, per this config's "no automated commits/pushes" stance.
 
 ---
 
